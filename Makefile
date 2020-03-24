@@ -10,6 +10,9 @@ build:
 buildImage:
 	docker build -t ${IMAGE} .
 
+kindLoad:
+	kind load docker-image ${IMAGE}
+
 pushImage:
 	docker push ${IMAGE}
 

@@ -31,17 +31,24 @@ const (
 
 // ColaServer 是一个 device plugin server
 type ColaServer struct {
-	srv     *grpc.Server
-	devices map[string]*pluginapi.Device
-	notify  chan bool
+	srv         *grpc.Server
+	devices     map[string]*pluginapi.Device
+	notify      chan bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	restartFlag bool // 本次是否是重启
 }
 
 // NewColaServer 实例化 colaServer
 func NewColaServer() *ColaServer {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &ColaServer{
-		devices: make(map[string]*pluginapi.Device),
-		srv:     grpc.NewServer(grpc.EmptyServerOption{}),
-		notify:  make(chan bool),
+		devices:     make(map[string]*pluginapi.Device),
+		srv:         grpc.NewServer(grpc.EmptyServerOption{}),
+		notify:      make(chan bool),
+		ctx:         ctx,
+		cancel:      cancel,
+		restartFlag: false,
 	}
 }
 
@@ -172,6 +179,10 @@ func (s *ColaServer) ListAndWatch(e *pluginapi.Empty, srv pluginapi.DevicePlugin
 			}
 
 			srv.Send(&pluginapi.ListAndWatchResponse{Devices: devs})
+
+		case <-s.ctx.Done():
+			log.Info("ListAndWatch exit")
+			return nil
 		}
 	}
 }
@@ -235,6 +246,10 @@ func (s *ColaServer) watchDevice() error {
 
 	done := make(chan bool)
 	go func() {
+		defer func() {
+			done <- true
+			log.Info("watch device exit")
+		}()
 		for {
 			select {
 			case event, ok := <-w.Events:
@@ -264,6 +279,9 @@ func (s *ColaServer) watchDevice() error {
 					return
 				}
 				log.Println("error:", err)
+
+			case <-s.ctx.Done():
+				break
 			}
 		}
 	}()
